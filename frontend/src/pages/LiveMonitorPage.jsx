@@ -228,6 +228,21 @@ export default function LiveMonitorPage({
           </div>
           <div style={{ fontSize: '0.7rem', color: '#22c55e', marginTop: '0.25rem' }}>0% packet loss detected</div>
         </div>
+
+        <div className="glass-card" style={{ padding: '1rem' }}>
+          <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Risk Score</div>
+          <div style={{
+            fontSize: '1.25rem',
+            fontWeight: 800,
+            color: (risk.score ?? 0) >= 70 ? '#ef4444' : (risk.score ?? 0) >= 40 ? '#f59e0b' : '#22c55e',
+            marginTop: '0.25rem'
+          }}>
+            {risk.score ?? 0} / 100
+          </div>
+          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+            Level: {risk.level ?? 'SAFE'}
+          </div>
+        </div>
       </div>
     </div>
   );

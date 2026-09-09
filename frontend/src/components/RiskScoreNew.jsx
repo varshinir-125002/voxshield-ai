@@ -5,10 +5,19 @@ import React from 'react';
 
 function getRiskStyle(level) {
   switch (level) {
-    case 'HIGH_RISK':   return { color: '#ef4444', label: 'HIGH RISK',   glow: '0 0 30px rgba(239,68,68,0.4)' };
-    case 'SUSPICIOUS':  return { color: '#f97316', label: 'SUSPICIOUS',  glow: '0 0 24px rgba(249,115,22,0.3)' };
-    case 'CAUTION':     return { color: '#f59e0b', label: 'CAUTION',     glow: '0 0 24px rgba(245,158,11,0.3)' };
-    default:            return { color: '#10b981', label: 'SAFE',        glow: '0 0 20px rgba(16,185,129,0.3)' };
+    case 'HIGH_RISK':
+    case 'CRITICAL':
+    case 'HIGH':
+      return { color: '#ef4444', label: 'HIGH RISK', glow: '0 0 30px rgba(239,68,68,0.4)' };
+    case 'SUSPICIOUS':
+      return { color: '#f97316', label: 'SUSPICIOUS', glow: '0 0 24px rgba(249,115,22,0.3)' };
+    case 'CAUTION':
+    case 'MEDIUM':
+      return { color: '#f59e0b', label: 'CAUTION', glow: '0 0 24px rgba(245,158,11,0.3)' };
+    case 'SAFE':
+    case 'LOW':
+    default:
+      return { color: '#10b981', label: 'SAFE', glow: '0 0 20px rgba(16,185,129,0.3)' };
   }
 }
 
@@ -31,9 +40,13 @@ export default function RiskScoreNew({ riskData, score: propScore, level: propLe
   const circ = 2 * Math.PI * R;
   const offset = circ - (score / 100) * circ;
 
-  const badgeClass = level === 'HIGH_RISK' ? 'badge-danger'
-    : level === 'SUSPICIOUS' ? 'badge-suspicious'
-    : level === 'CAUTION' ? 'badge-caution'
+  const isHigh = level === 'HIGH_RISK' || level === 'CRITICAL' || level === 'HIGH';
+  const isSuspicious = level === 'SUSPICIOUS';
+  const isCaution = level === 'CAUTION' || level === 'MEDIUM';
+
+  const badgeClass = isHigh ? 'badge-danger'
+    : isSuspicious ? 'badge-suspicious'
+    : isCaution ? 'badge-caution'
     : 'badge-safe';
 
   return (

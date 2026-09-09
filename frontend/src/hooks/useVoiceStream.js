@@ -118,7 +118,9 @@ export function useVoiceStream() {
       const classification = data.classification || data.voice?.status || 'HUMAN';
       const riskScore = data.overall_risk_score !== undefined
         ? data.overall_risk_score
-        : (data.risk?.score ?? 0);
+        : (data.risk_score !== undefined
+            ? data.risk_score
+            : (data.risk?.score ?? 0));
 
       console.log('[UI] Updating detection result', { probability: aiProb, classification });
       console.log('[UI] Updating risk score', riskScore);
