@@ -3,6 +3,7 @@ VoxShield AI - Real-Time WebSocket Handler
 Receives live audio streaming chunks, runs real-time pipeline, and streams back threat analyses.
 """
 
+import asyncio
 import json
 import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -67,16 +68,19 @@ async def voice_websocket(websocket: WebSocket):
                 transcript_hint = data.get("transcript_hint")
 
                 try:
-                    # Execute pipeline
-                    result = analysis_service.process_audio_pipeline(
+                    # Execute pipeline concurrently in thread pool to prevent blocking asyncio loop
+                    t_ws_start = time.perf_counter()
+                    result = await asyncio.to_thread(
+                        analysis_service.process_audio_pipeline,
                         raw_audio=audio_b64,
                         speaker_id=speaker_id,
                         transcript_hint=transcript_hint,
                         timestamp=ts,
                     )
+                    t_total_ms = (time.perf_counter() - t_ws_start) * 1000
 
                     # Send analysis result back to frontend
-                    logger.info(f"[WS] Sending analysis result to frontend (Risk: {result.get('overall_risk_score')}, Classification: {result.get('classification')})")
+                    logger.info(f"[WS] Analysis finished in {t_total_ms:.1f}ms (Risk: {result.get('overall_risk_score')}, Classification: {result.get('classification')})")
                     await websocket.send_json(result)
 
                     # If configured threat threshold is reached, issue explicit security warning per API.md

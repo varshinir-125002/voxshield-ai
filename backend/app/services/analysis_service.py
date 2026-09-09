@@ -50,51 +50,65 @@ class AnalysisService:
         target_audio = active_audio if len(active_audio) >= 512 else audio
 
         # Step 3: Acoustic Feature Extraction
+        t0 = time.perf_counter()
         features = extract_all_features(target_audio, sr=sr)
         spectral = features["spectral"]
         
         # Calculate acoustic anomaly score based on spectral flatness and rolloff
         anomaly_score = float(np.clip(spectral["flatness"] * 25.0, 0.0, 1.0))
+        t_feat = (time.perf_counter() - t0) * 1000
 
-        # Step 4: AI Voice Authenticity Detection
+        # Step 4: AI Voice Authenticity Detection (reuses precomputed features)
+        t0 = time.perf_counter()
         logger.info("[DETECTION] Running AI voice detection")
-        voice_res = voice_detector.predict(target_audio, sr=sr)
+        voice_res = voice_detector.predict(target_audio, sr=sr, precomputed_features=features)
         ai_spoof_prob = int(round(voice_res["ai_probability"] * 100))
         logger.info(f"[DETECTION] AI spoof probability: {ai_spoof_prob}%")
+        t_detect = (time.perf_counter() - t0) * 1000
 
         # Step 5: Speaker Verification
+        t0 = time.perf_counter()
         logger.info("[SPEAKER] Calculating speaker similarity")
         speaker_data = get_speaker(speaker_id) if speaker_id else None
         has_registered_speaker = speaker_data is not None
         registered_name = speaker_data["name"] if speaker_data else None
 
-        current_embedding = speaker_verifier.create_embedding(target_audio, sr=sr)
-        registered_embedding = speaker_data["embedding"] if speaker_data else None
-
-        speaker_comp = speaker_verifier.compare(current_embedding, registered_embedding)
-        
         if has_registered_speaker:
+            current_embedding = speaker_verifier.create_embedding(target_audio, sr=sr)
+            registered_embedding = speaker_data["embedding"] if speaker_data else None
+            speaker_comp = speaker_verifier.compare(current_embedding, registered_embedding)
             speaker_similarity = int(round(speaker_comp["similarity"] * 100))
             logger.info(f"[SPEAKER] Speaker similarity: {speaker_similarity}% (Speaker: {registered_name})")
+            speaker_res = {
+                "match": speaker_comp["match"],
+                "similarity": speaker_comp["similarity"],
+                "registered_speaker": registered_name,
+                "status_message": speaker_comp["status_message"],
+            }
         else:
             speaker_similarity = None
             logger.info("[SPEAKER] No registered speaker profile enrolled (similarity: null)")
-
-        speaker_res = {
-            "match": speaker_comp["match"] if has_registered_speaker else False,
-            "similarity": speaker_comp["similarity"] if has_registered_speaker else 0.0,
-            "registered_speaker": registered_name,
-            "status_message": speaker_comp["status_message"],
-        }
+            speaker_res = {
+                "match": False,
+                "similarity": 0.0,
+                "registered_speaker": None,
+                "status_message": "Speaker verification unavailable — no registered speaker",
+            }
+        t_speaker = (time.perf_counter() - t0) * 1000
 
         # Step 6: Speech-to-Text
+        t0 = time.perf_counter()
         transcript_text = speech_to_text.transcribe(target_audio, sr=sr, client_hint=transcript_hint)
+        t_stt = (time.perf_counter() - t0) * 1000
 
         # Step 7: Transcript Security Risk Analysis
+        t0 = time.perf_counter()
         transcript_res = transcript_analyzer.analyze(transcript_text)
         conversation_risk = int(round(transcript_res["risk_score"] * 100))
+        t_nlp = (time.perf_counter() - t0) * 1000
 
         # Step 8: Multi-Signal Risk Engine
+        t0 = time.perf_counter()
         logger.info("[RISK] Calculating risk score")
         risk_res = risk_engine.calculate_risk(
             ai_probability=voice_res["ai_probability"],
@@ -106,7 +120,9 @@ class AnalysisService:
         )
         overall_risk_score = risk_res["score"]
         raw_level = risk_res["level"]
+        t_risk = (time.perf_counter() - t0) * 1000
         logger.info(f"[RISK] Risk score: {overall_risk_score} (Level: {raw_level})")
+        logger.debug(f"[TIMING] Feats: {t_feat:.1f}ms, Detect: {t_detect:.1f}ms, Spk: {t_speaker:.1f}ms, STT: {t_stt:.1f}ms, NLP: {t_nlp:.1f}ms, Risk: {t_risk:.1f}ms")
 
         # Map to required risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
         level_map = {

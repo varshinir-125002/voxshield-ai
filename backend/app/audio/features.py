@@ -27,7 +27,10 @@ def extract_mel_spectrogram(audio: np.ndarray, sr: int = 16000, n_mels: int = 12
     return librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=n_mels)
 
 
-def extract_spectral_features(audio: np.ndarray, sr: int = 16000) -> Dict[str, float]:
+from typing import Dict, Any, Optional
+
+
+def extract_spectral_features(audio: np.ndarray, sr: int = 16000, S: Optional[np.ndarray] = None) -> Dict[str, float]:
     """
     Extract spectral envelope and shape descriptors:
     - Spectral Centroid (brightness)
@@ -35,6 +38,7 @@ def extract_spectral_features(audio: np.ndarray, sr: int = 16000) -> Dict[str, f
     - Spectral Flatness (noisiness vs tonality; vocoder artifact marker)
     - Spectral Rolloff
     - Zero-Crossing Rate
+    Reuses precomputed magnitude spectrogram S when provided for extreme performance.
     """
     if len(audio) < 512:
         return {
@@ -45,10 +49,15 @@ def extract_spectral_features(audio: np.ndarray, sr: int = 16000) -> Dict[str, f
             "zcr": 0.0,
         }
 
-    centroid = float(np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr)))
-    bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(y=audio, sr=sr)))
-    flatness = float(np.mean(librosa.feature.spectral_flatness(y=audio)))
-    rolloff = float(np.mean(librosa.feature.spectral_rolloff(y=audio, sr=sr)))
+    if S is None:
+        n_fft = min(2048, len(audio))
+        hop_length = min(512, max(1, n_fft // 4))
+        S = np.abs(librosa.stft(audio, n_fft=n_fft, hop_length=hop_length))
+
+    centroid = float(np.mean(librosa.feature.spectral_centroid(S=S, sr=sr)))
+    bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(S=S, sr=sr)))
+    flatness = float(np.mean(librosa.feature.spectral_flatness(S=S)))
+    rolloff = float(np.mean(librosa.feature.spectral_rolloff(S=S, sr=sr)))
     zcr = float(np.mean(librosa.feature.zero_crossing_rate(y=audio)))
 
     return {
@@ -70,17 +79,25 @@ def extract_pitch(audio: np.ndarray, sr: int = 16000) -> Dict[str, float]:
         return {"pitch_mean": 0.0, "pitch_std": 0.0, "pitch_jitter": 0.0}
 
     try:
-        f0, voiced_flag, voiced_probs = librosa.pyin(
+        f0 = librosa.yin(
             audio,
-            fmin=librosa.note_to_hz("C2"),
-            fmax=librosa.note_to_hz("C7"),
+            fmin=65.4,
+            fmax=800.0,
             sr=sr,
+            frame_length=1024,
+            hop_length=512,
         )
-        voiced_f0 = f0[~np.isnan(f0)]
+        voiced_f0 = f0[(f0 >= 65.4) & (f0 < 790.0) & ~np.isnan(f0)]
         if len(voiced_f0) > 0:
             pitch_mean = float(np.mean(voiced_f0))
-            pitch_std = float(np.std(voiced_f0))
-            # Jitter approx
+            # Outlier-trimmed standard deviation for robust prosody measure (removes octave jump artifacts)
+            if len(voiced_f0) >= 6:
+                p10, p90 = np.percentile(voiced_f0, 10), np.percentile(voiced_f0, 90)
+                trimmed_voiced = voiced_f0[(voiced_f0 >= p10) & (voiced_f0 <= p90)]
+                pitch_std = float(np.std(trimmed_voiced)) if len(trimmed_voiced) > 0 else float(np.std(voiced_f0))
+            else:
+                pitch_std = float(np.std(voiced_f0))
+
             diffs = np.abs(np.diff(voiced_f0))
             pitch_jitter = float(np.mean(diffs)) if len(diffs) > 0 else 0.0
             return {
@@ -94,14 +111,18 @@ def extract_pitch(audio: np.ndarray, sr: int = 16000) -> Dict[str, float]:
     return {"pitch_mean": 0.0, "pitch_std": 0.0, "pitch_jitter": 0.0}
 
 
-def extract_energy(audio: np.ndarray) -> Dict[str, float]:
+def extract_energy(audio: np.ndarray, S: Optional[np.ndarray] = None) -> Dict[str, float]:
     """
     Extract RMS energy and energy envelope variance.
     """
     if len(audio) < 512:
         return {"rms_mean": 0.0, "rms_std": 0.0}
 
-    rms = librosa.feature.rms(y=audio)[0]
+    if S is not None:
+        frame_len = (S.shape[-2] - 1) * 2
+        rms = librosa.feature.rms(S=S, frame_length=frame_len)[0]
+    else:
+        rms = librosa.feature.rms(y=audio)[0]
     return {
         "rms_mean": float(round(float(np.mean(rms)), 4)),
         "rms_std": float(round(float(np.std(rms)), 4)),
@@ -110,11 +131,25 @@ def extract_energy(audio: np.ndarray) -> Dict[str, float]:
 
 def extract_all_features(audio: np.ndarray, sr: int = 16000) -> Dict[str, Any]:
     """
-    Aggregates full acoustic feature vector.
+    Aggregates full acoustic feature vector with single-pass STFT sharing.
     """
-    spectral = extract_spectral_features(audio, sr)
+    if len(audio) < 512:
+        return {
+            "sample_rate": sr,
+            "duration_seconds": round(len(audio) / sr, 2),
+            "spectral": extract_spectral_features(audio, sr),
+            "pitch": extract_pitch(audio, sr),
+            "energy": extract_energy(audio),
+            "mfcc_means": [0.0] * 20,
+        }
+
+    # Precalculate magnitude spectrogram once for spectral and energy extractors
+    n_fft = min(2048, len(audio))
+    hop_length = min(512, max(1, n_fft // 4))
+    S = np.abs(librosa.stft(audio, n_fft=n_fft, hop_length=hop_length))
+    spectral = extract_spectral_features(audio, sr, S=S)
     pitch = extract_pitch(audio, sr)
-    energy = extract_energy(audio)
+    energy = extract_energy(audio, S=S)
     mfcc = extract_mfcc(audio, sr)
     mfcc_means = [float(round(m, 4)) for m in np.mean(mfcc, axis=1)]
 

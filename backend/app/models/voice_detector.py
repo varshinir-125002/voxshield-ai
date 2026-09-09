@@ -5,7 +5,7 @@ Includes Prototype Detection Model and plug-in adapter for trained deep learning
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import numpy as np
 from app.audio.features import extract_all_features
 from app.core.logging import logger
@@ -15,7 +15,7 @@ class BaseVoiceDetector(ABC):
     """Abstract interface for all voice detection engines."""
 
     @abstractmethod
-    def predict(self, audio: np.ndarray, sr: int = 16000) -> Dict[str, Any]:
+    def predict(self, audio: np.ndarray, sr: int = 16000, precomputed_features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         pass
 
 
@@ -36,7 +36,7 @@ class PrototypeVoiceDetector(BaseVoiceDetector):
         self.version = "1.0-sih-prototype"
         logger.info(f"Initialized {self.model_name} ({self.version})")
 
-    def predict(self, audio: np.ndarray, sr: int = 16000) -> Dict[str, Any]:
+    def predict(self, audio: np.ndarray, sr: int = 16000, precomputed_features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if audio is None or len(audio) < 1024:
             return {
                 "ai_probability": 0.0,
@@ -46,7 +46,7 @@ class PrototypeVoiceDetector(BaseVoiceDetector):
                 "model_type": self.model_name,
             }
 
-        feats = extract_all_features(audio, sr)
+        feats = precomputed_features if precomputed_features is not None else extract_all_features(audio, sr)
         spectral = feats["spectral"]
         pitch = feats["pitch"]
         energy = feats["energy"]
@@ -61,10 +61,11 @@ class PrototypeVoiceDetector(BaseVoiceDetector):
         # Natural human speech has organic pitch standard deviation (> 12 Hz during speech).
         # Synthetic speech without pitch diffusion can have rigid prosody (< 8 Hz)
         # or unnatural sudden jumps.
+        pitch_mean = pitch.get("pitch_mean", 0.0)
         pitch_std = pitch["pitch_std"]
-        if pitch_std > 0:
+        if pitch_mean > 0:
             if pitch_std < 8.0:
-                prosody_score = 0.75  # Unnaturally monotone / synthetic flatline
+                prosody_score = 0.75  # Unnaturally monotone / synthetic flatline (including pitch_std == 0)
             elif pitch_std > 85.0:
                 prosody_score = 0.65  # Glitchy synthetic frequency jump
             else:
