@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { fetchRiskConfig, fetchSystemStatus, fetchHealth } from '../services/api';
+import { fetchRiskConfig, fetchSystemStatus, fetchHealth, API_BASE } from '../services/api';
+import { DEFAULT_WS_URL } from '../services/websocket';
 
 export default function SettingsPage() {
   const [riskConfig, setRiskConfig] = useState(null);
@@ -154,13 +155,13 @@ export default function SettingsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.08)', paddingBottom: '0.4rem' }}>
               <span style={{ color: '#94a3b8' }}>API Server:</span>
               <span style={{ fontFamily: 'monospace', color: health?.status === 'ok' ? '#22c55e' : '#f59e0b' }}>
-                http://localhost:8000 ({systemStatus?.backend || health?.status || 'ONLINE'})
+                {API_BASE} ({systemStatus?.backend || health?.status || 'ONLINE'})
               </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.08)', paddingBottom: '0.4rem' }}>
               <span style={{ color: '#94a3b8' }}>WebSocket Gateway:</span>
-              <span style={{ fontFamily: 'monospace', color: '#38bdf8' }}>ws://localhost:8000/ws/voice ({systemStatus?.websocket || 'available'})</span>
+              <span style={{ fontFamily: 'monospace', color: '#38bdf8' }}>{DEFAULT_WS_URL} ({systemStatus?.websocket || 'available'})</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.08)', paddingBottom: '0.4rem' }}>

@@ -3,8 +3,10 @@
  * Manages resilient bidirectional WebSocket connection to ws://localhost:8000/ws/voice
  */
 
+export const DEFAULT_WS_URL = import.meta.env.VITE_WS_URL || 'wss://voxshield-ai-backend-verh.onrender.com/ws/voice';
+
 export class VoiceWebSocketClient {
-  constructor(url = 'ws://localhost:8000/ws/voice') {
+  constructor(url = DEFAULT_WS_URL) {
     this.url = url;
     this.ws = null;
     this.isConnected = false;
